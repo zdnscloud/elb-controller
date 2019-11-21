@@ -31,7 +31,41 @@
 
 ```
 ## 原理
-前提：k8s本身已有LoadBalancer类型的service对象，供与外部负载设备联动使用
+### LoadBalancer service
+k8s LoadBalancer类型service对象，供与外部负载设备联动使用，实际是在是NodePort类型基础上增加了service status（所有类型service都有status字段，但该字段目前仅有LoadBalancer一个子属性）
+所以k8s与外部负载均衡设备联动的原理图如下：
+```
+                                                             +------------------------+
+                                                             |                        |
+                                                             |                        |
+                                                             |     +-------------+    |
+                                                             |     |             |    |
+                                                             |  +->+worker1:30010|    |
+                                                             |  |  |             |    |
+                                                             |  |  +-------------+    |
+                                                             |  |                     |
+                                                             |  |                     |
+                                                             |  |                     |
+                                                             |  |  +-------------+    |
++-------------+            +--------------------+            |  |  |             |    |
+|             |            |                    |            |  +->+worker2:30010|    |
+|   client    +----------->+ external loadblance+---------------+  |             |    |
+|             |            |                    |            |  |  +-------------+    |
++-------------+            +--------------------+            |  |                     |
+                                                             |  |                     |
+                                                             |  |                     |
+                                                             |  |  +-------------+    |
+                                                             |  |  |             |    |
+                                                             |  +->+worker3:30010|    |
+                                                             |     |             |    |
+                                                             |     +-------------+    |
+                                                             |                        |
+                                                             +------------------------+
+
+```
+即客户端请求到达elb后，elb再将请求负载给后端的nodeport上，因nodeport默认会进行snat，将请求的源ip替换为node ip（原因是为了实现任意node的nodeport上都可以路由service的请求），为了避免node层的snat性能损耗和网络延迟（elb会做一层snat），需要在创建LoadBalancer类型service的时候，将service中的`externalTrafficPolicy`属性设置为`Local`，同时elb只将流量负载给service pod所在节点的nodeport上
+当service pod发生漂移后，elb-controller需要感知service真实的nodeport（可以接受请求的node的nodeport），并更新elb上的虚拟server的server group配置
+
 ### k8s事件监听
 elb-controller一方面监听k8s service、endpoint及node事件，并根据如下规则执行相应操作:
 * 监听到service创建事件后：
@@ -44,6 +78,7 @@ elb-controller一方面监听k8s service、endpoint及node事件，并根据如�
     判断是否需要处理（LoadBalancer类型service的endpoint事件，且该service拥有zcloud elb-controller annotation），若满足条件，创建elb service update任务，加入任务队列
 * 监听到node事件：
     根据监听到的node事件，更新elb-controller中缓存的nodename和ip对应关系表
+> 创建elb task前，会为service添加finalizer，elb task执行成功或失败计数已满task丢弃的时候会删除此service的finalizer，即service在被elb-controller处理完之前不允许删除
 ### elb task处理
 elb-controller会起一个线程，读取elb的任务队列，并调用api更新外部负载均衡设备的配置
 下发配置时先向主elb下发配置，若失败，则向备elb进行下发，若两者都失败，则将task重新加入任务队列
@@ -68,3 +103,6 @@ elb-controller会起一个线程，读取elb的任务队列，并调用api更新
 2. 源ip snat配置：是否进行snat（默认开启）
 3. 会话保持配置
 4. 服务vip（必需项）
+
+## todo
+* 支持L7负载（即支持Ingress）：需考虑外部负载设备场景下Ingress的对象限制，如果Ingress的后端service类型是ClusterIP则外部负载设备实际是无法访问到该service的
