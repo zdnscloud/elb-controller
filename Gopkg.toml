@@ -1,0 +1,15 @@
+[[constraint]]
+  branch = "master"
+  name = "github.com/zdnscloud/cement"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/zdnscloud/gok8s"
+
+[[constraint]]
+  branch = "release-1.13"
+  name = "k8s.io/api"
+
+[prune]
+  go-tests = true
+  unused-packages = true

@@ -1,0 +1,22 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: lb-test
+  name: lb-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lb-test
+  template:
+    metadata:
+      labels:
+        app: lb-test
+    spec:
+      containers:
+        - image: hiwenzi/hello-world-go:latest
+          imagePullPolicy: IfNotPresent
+          name: hello
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
