@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  labels:
-    app: lb-test
   annotations:
     lb.zcloud.cn/method: "rr"
-    lb.zcloud.cn/vip: 192.168.135.99
-  name: lb-test
+    lb.zcloud.cn/vip: 192.168.135.111
+  name: lb-test1
+  finalizers:
+    - lb.zcloud.cn/protect
 spec:
   ports:
     - name: tcp-9090

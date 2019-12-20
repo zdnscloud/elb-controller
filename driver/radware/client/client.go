@@ -44,23 +44,23 @@ func genBasicAuthToken(user, password string) string {
 	return base64.StdEncoding.EncodeToString([]byte(t))
 }
 
-func (c *Client) Rs() *RealServerClient {
+func (c *Client) RealServer() *RealServerClient {
 	return c.realServer
 }
 
-func (c *Client) Rsp() *RealServerPortClient {
+func (c *Client) RealServerPort() *RealServerPortClient {
 	return c.realServerPort
 }
 
-func (c *Client) Sg() *ServerGroupClient {
+func (c *Client) ServerGroup() *ServerGroupClient {
 	return c.serverGroup
 }
 
-func (c *Client) VServer() *VirtualServerClient {
+func (c *Client) VirtualServer() *VirtualServerClient {
 	return c.virtualServer
 }
 
-func (c *Client) VService() *VirtualServiceClient {
+func (c *Client) VirtualService() *VirtualServiceClient {
 	return c.virtualService
 }
 

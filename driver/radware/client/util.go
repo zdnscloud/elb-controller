@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	failedRetries  = 10
-	failedWaitTime = 3 * time.Second
+	failedRetries  = 5
+	failedWaitTime = 5 * time.Second
 )
 
 func get(url, token string, obj interface{}) error {

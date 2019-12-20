@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zcloud
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: elb-controller
+  namespace: zcloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elb-controller
+  template:
+    metadata:
+      name: elb-controller
+      labels:
+        app: elb-controller
+    spec:
+      serviceAccount: zcloud-elb-controller
+      containers:
+      - name: elb-controller
+        image: zdnscloud/elb-controller:v0.0.1
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: zcloud-elb-controller
+  namespace: zcloud
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  annotations:
+    rbac.authorization.kubernetes.io/autoupdate: "true"
+  labels:
+    kubernetes.io/bootstrapping: rbac-defaults
+  name: zcloud-elb-controller
+rules:
+- apiGroups:
+  - '*'
+  resources:
+  - 'endpoints'
+  - 'nodes'
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - '*'
+  resources:
+  - 'services'
+  verbs:
+  - get
+  - list
+  - watch
+  - put
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: zcloud-elb-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: zcloud-elb-controller
+subjects:
+- kind: ServiceAccount
+  name: zcloud-elb-controller
+  namespace: zcloud

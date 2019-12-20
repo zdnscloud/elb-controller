@@ -80,23 +80,24 @@ func (m *LBControlManager) init() error {
 			if err := m.driver.Create(config); err != nil {
 				return err
 			}
-			log.Debugf("[Init] create service %s %s lb config succeed %s", svc.Namespace, svc.Name, config.ToJson())
+			log.Debugf("[Init] create service %s config %s succeed", genOBjNamespacedName(svc.Namespace, svc.Name), config.ToJson())
+			if err := updateServiceStatus(m.client, config); err != nil {
+				return err
+			}
 		}
 	}
-	log.Infof("[LBControlManager] init done")
+	log.Infof("[Init] done")
 	return nil
 }
 
 func (m *LBControlManager) TaskLoop() {
 	for {
 		t := <-m.taskCh
-		log.Debugf("[TaskLoop] read task from queue %s", t.ToJson())
 
 		if t.Failures == maxTaskFailures {
 			log.Warnf("[TaskLoop] drop task %s due to exceed max task failures %v", t.ToJson(), maxTaskFailures)
 			continue
 		}
-
 		switch t.Type {
 		case CreateTask:
 			if err := m.driver.Create(t.NewConfig); err != nil {

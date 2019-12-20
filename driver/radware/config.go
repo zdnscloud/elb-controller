@@ -138,8 +138,8 @@ func genRealServerID(nodeIP string, nodePort int32, protocol driver.Protocol, cf
 
 func getServerGroup(s driver.Service, c driver.Config) *types.ServerGroup {
 	result := &types.ServerGroup{
-		Metric:           1,
-		HealthCheckLayer: 2, // default use tcp healthcheck
+		Metric:   1,     // default use round robin
+		HealthID: "tcp", // default use tcp healthcheck
 	}
 	switch c.Method {
 	case driver.LBMethodLeastConnections:
@@ -149,7 +149,7 @@ func getServerGroup(s driver.Service, c driver.Config) *types.ServerGroup {
 	}
 
 	if s.Protocol == driver.ProtocolUDP {
-		result.HealthCheckLayer = 1 // use icmp healthcheck
+		result.HealthID = "udp"
 	}
 	return result
 }
@@ -170,7 +170,7 @@ func getVirtualService(s driver.Service) *types.VirtualService {
 		UDPBalance: 3, // default tcp service type
 		VirtPort:   s.Port,
 		RealPort:   s.BackendPort,
-		DBind:      2,
+		DBind:      3,
 		PBind:      2,
 	}
 	if s.Protocol == driver.ProtocolUDP {

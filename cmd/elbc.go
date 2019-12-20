@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 
 	"github.com/zdnscloud/elb-controller/driver/radware"
 	"github.com/zdnscloud/elb-controller/lbctrl"
@@ -55,7 +56,7 @@ func main() {
 	flag.Parse()
 
 	if showVersion {
-		log.Infof("elbc %s (build at %s)\n", version, build)
+		fmt.Printf("Zcloud elb-controller %s (build at %s)\n", version, build)
 		return
 	}
 

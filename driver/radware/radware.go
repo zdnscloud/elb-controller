@@ -20,7 +20,6 @@ func New(serverAddr, user, password string) *RadwareDriver {
 }
 
 func (d *RadwareDriver) Create(c driver.Config) error {
-	// defer d.client.RollBack()
 	if err := validateConfig(c); err != nil {
 		return err
 	}
@@ -33,8 +32,6 @@ func (d *RadwareDriver) Create(c driver.Config) error {
 }
 
 func (d *RadwareDriver) Update(old, new driver.Config) error {
-	// defer d.client.RollBack()
-
 	if err := validateConfig(old); err != nil {
 		return err
 	}
@@ -65,7 +62,6 @@ func (d *RadwareDriver) Update(old, new driver.Config) error {
 }
 
 func (d *RadwareDriver) Delete(c driver.Config) error {
-	defer d.client.RollBack()
 	if err := validateConfig(c); err != nil {
 		return err
 	}

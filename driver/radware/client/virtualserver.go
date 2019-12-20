@@ -22,11 +22,25 @@ func NewVirtualServerClient(token, serverAddr string) *VirtualServerClient {
 	}
 }
 
-func (c *VirtualServerClient) Create(id string, obj *types.VirtualServer) error {
+func (c *VirtualServerClient) Reconcile(id string, vs *types.VirtualServer) error {
+	exist, err := c.get(id)
+	if err != nil {
+		if err == ResourceNotFoundError {
+			return c.create(id, vs)
+		}
+		return err
+	}
+	if isVirtualServerEqual(exist, vs) {
+		return nil
+	}
+	return c.update(id, vs)
+}
+
+func (c *VirtualServerClient) create(id string, obj *types.VirtualServer) error {
 	return create(c.genUrl(id), c.token, obj)
 }
 
-func (c *VirtualServerClient) Update(id string, obj *types.VirtualServer) error {
+func (c *VirtualServerClient) update(id string, obj *types.VirtualServer) error {
 	return update(c.genUrl(id), c.token, obj)
 }
 
@@ -34,7 +48,7 @@ func (c *VirtualServerClient) Delete(id string) error {
 	return delete(c.genUrl(id), c.token)
 }
 
-func (c *VirtualServerClient) Get(id string) (*types.VirtualServer, error) {
+func (c *VirtualServerClient) get(id string) (*types.VirtualServer, error) {
 	list := &types.VirtualServerList{}
 	if err := get(c.genUrl(id), c.token, list); err != nil {
 		return nil, err
@@ -43,6 +57,13 @@ func (c *VirtualServerClient) Get(id string) (*types.VirtualServer, error) {
 		return nil, ResourceNotFoundError
 	}
 	return &list.VSTable[0], nil
+}
+
+func isVirtualServerEqual(v1, v2 *types.VirtualServer) bool {
+	if v1 == nil || v2 == nil {
+		return false
+	}
+	return v1.VirtServerIpAddress == v2.VirtServerIpAddress && v1.VirtServerState == v2.VirtServerState
 }
 
 func (c *VirtualServerClient) genUrl(id string) string {
