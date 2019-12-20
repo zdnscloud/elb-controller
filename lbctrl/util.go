@@ -168,14 +168,10 @@ func getLBConfigMethod(svc *corev1.Service) driver.LoadBalanceMethod {
 }
 
 func isServiceNeedHandle(svc *corev1.Service) bool {
-	return hasZcloudLBAnnotation(svc) && isLoadBalancerService(svc)
+	return hasZcloudLBVIPAnnotation(svc) && isLoadBalancerService(svc)
 }
 
-func hasZcloudLBAnnotation(svc *corev1.Service) bool {
-	if _, ok := svc.Annotations[ZcloudLBVIPAnnotationKey]; ok {
-		return true
-	}
-
+func hasZcloudLBVIPAnnotation(svc *corev1.Service) bool {
 	if _, ok := svc.Annotations[ZcloudLBVIPAnnotationKey]; ok {
 		return true
 	}

@@ -45,6 +45,13 @@ func (c *RealServerClient) update(id string, rs *types.RealServer) error {
 }
 
 func (c *RealServerClient) Delete(id string) error {
+	_, err := c.get(id)
+	if err != nil {
+		if err == ResourceNotFoundError {
+			return nil
+		}
+		return err
+	}
 	return delete(c.genUrl(id), c.token)
 }
 

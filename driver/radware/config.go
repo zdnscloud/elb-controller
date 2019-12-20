@@ -21,10 +21,6 @@ type updateRadwareConfig struct {
 	new radwareConfig
 }
 
-func isSameRsport(c updateRadwareConfig) bool {
-	return c.old.RealServerPort.RealPort == c.new.RealServerPort.RealPort
-}
-
 func getRadwareConfigs(config driver.Config) []radwareConfig {
 	result := []radwareConfig{}
 

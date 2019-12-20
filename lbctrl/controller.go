@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	taskBufferCount = 50
+	taskBufferCount = 30
 	maxTaskFailures = 3
 
 	zcloudLBServiceFinalizer = "lb.zcloud.cn/protect"
@@ -43,54 +43,25 @@ func New(cli client.Client, cache cache.Cache, clusterName string, lbDriver driv
 	ctrl.Watch(&corev1.Service{})
 	ctrl.Watch(&corev1.Node{})
 
+	nodeIpMap, err := getNodeIPMap(cli)
+	if err != nil {
+		return nil, err
+	}
+
 	m := &LBControlManager{
 		clusterName: clusterName,
 		client:      cli,
 		driver:      lbDriver,
 		taskCh:      make(chan Task, taskBufferCount),
 		stopCh:      make(chan struct{}),
-	}
-
-	if err := m.init(); err != nil {
-		return nil, fmt.Errorf("[LBControlManager] init failed %s", err.Error())
+		nodes:       nodeIpMap,
 	}
 
 	go ctrl.Start(m.stopCh, m, predicate.NewIgnoreUnchangedUpdate())
 	return m, nil
 }
 
-func (m *LBControlManager) init() error {
-	nodeIpMap, err := getNodeIPMap(m.client)
-	if err != nil {
-		return err
-	}
-	m.nodes = nodeIpMap
-
-	svcs := &corev1.ServiceList{}
-	if err := m.client.List(context.TODO(), &client.ListOptions{}, svcs); err != nil {
-		return err
-	}
-
-	for _, svc := range svcs.Items {
-		if isServiceNeedHandle(&svc) {
-			config, err := genLBConfigByService(m.client, &svc, m.clusterName, m.nodes)
-			if err != nil {
-				return err
-			}
-			if err := m.driver.Create(config); err != nil {
-				return err
-			}
-			log.Debugf("[Init] create service %s config %s succeed", genOBjNamespacedName(svc.Namespace, svc.Name), config.ToJson())
-			if err := updateServiceStatus(m.client, config); err != nil {
-				return err
-			}
-		}
-	}
-	log.Infof("[Init] done")
-	return nil
-}
-
-func (m *LBControlManager) TaskLoop() {
+func (m *LBControlManager) Loop() {
 	for {
 		t := <-m.taskCh
 
@@ -102,7 +73,7 @@ func (m *LBControlManager) TaskLoop() {
 		case CreateTask:
 			if err := m.driver.Create(t.NewConfig); err != nil {
 				log.Warnf("[TaskLoop] create task %s failed %s", t.ToJson(), err.Error())
-				m.addFailureAndSendCh(t)
+				m.readdTaskWhenFailed(t)
 				continue
 			}
 			log.Debugf("[TaskLoop] create task %s succeed", t.ToJson())
@@ -112,23 +83,22 @@ func (m *LBControlManager) TaskLoop() {
 		case UpdateTask:
 			if err := m.driver.Update(t.OldConfig, t.NewConfig); err != nil {
 				log.Warnf("[TaskLoop] update task %s failed %s", t.ToJson(), err.Error())
-				m.addFailureAndSendCh(t)
+				m.readdTaskWhenFailed(t)
 				continue
 			}
 			log.Debugf("[TaskLoop] update task %s succeed", t.ToJson())
-
 			if t.OldConfig.VIP == t.NewConfig.VIP {
 				continue
 			}
-
 			if err := updateServiceStatus(m.client, t.NewConfig); err != nil {
 				log.Warnf("[TaskLoop] update service status failed %s", err.Error())
 			}
 		case DeleteTask:
 			if err := m.driver.Delete(t.NewConfig); err != nil {
 				log.Warnf("[TaskLoop] delete task %s failed %s", t.ToJson(), err.Error())
-				m.addFailureAndSendCh(t)
+				m.readdTaskWhenFailed(t)
 			}
+			log.Debugf("[TaskLoop] delete task %s succeed", t.ToJson())
 			if err := removeZcloudFinalizerIfNeed(m.client, t.NewConfig); err != nil {
 				log.Warnf("[TaskLoop] remove service finalizer failed %s", err.Error())
 			}
@@ -138,7 +108,7 @@ func (m *LBControlManager) TaskLoop() {
 	}
 }
 
-func (m *LBControlManager) addFailureAndSendCh(t Task) {
+func (m *LBControlManager) readdTaskWhenFailed(t Task) {
 	t.Failures += 1
 	m.taskCh <- t
 }
@@ -167,11 +137,18 @@ func removeZcloudFinalizerIfNeed(cli client.Client, config driver.Config) error 
 		return err
 	}
 
+	var found bool
 	newFinalizers := []string{}
 	for _, f := range svc.Finalizers {
-		if f != zcloudLBServiceFinalizer {
+		if f == zcloudLBServiceFinalizer {
+			found = true
+		} else {
 			newFinalizers = append(newFinalizers, f)
 		}
+	}
+
+	if !found {
+		return nil
 	}
 	svc.Finalizers = newFinalizers
 	return cli.Update(context.TODO(), svc)
@@ -181,13 +158,17 @@ func (m *LBControlManager) OnCreate(e event.CreateEvent) (handler.Result, error)
 	switch obj := e.Object.(type) {
 	case *corev1.Service:
 		if isServiceNeedHandle(obj) {
-			log.Debugf("[Event] service %s created", genOBjNamespacedName(obj.Namespace, obj.Name))
-			config, err := genLBConfigByService(m.client, obj, m.clusterName, m.nodes)
-			if err != nil {
-				log.Warnf("[Event] created-service %s config gen failed %s", genOBjNamespacedName(obj.Namespace, obj.Name), err.Error())
+			if obj.ObjectMeta.DeletionTimestamp != nil {
+				m.addDeleteTask(obj)
+			} else {
+				log.Debugf("[Event] service %s created", genOBjNamespacedName(obj.Namespace, obj.Name))
+				config, err := genLBConfigByService(m.client, obj, m.clusterName, m.nodes)
+				if err != nil {
+					log.Warnf("[Event] created-service %s config gen failed %s", genOBjNamespacedName(obj.Namespace, obj.Name), err.Error())
+				}
+				log.Debugf("[Event] created-service %s config %s", genOBjNamespacedName(obj.Namespace, obj.Name), config.ToJson())
+				m.taskCh <- NewTask(CreateTask, driver.Config{}, config)
 			}
-			log.Debugf("[Event] created-service %s config %s", genOBjNamespacedName(obj.Namespace, obj.Name), config.ToJson())
-			m.taskCh <- NewTask(CreateTask, driver.Config{}, config)
 		}
 	case *corev1.Node:
 		log.Debugf("[Event] node %s created", obj.Name)
@@ -196,26 +177,39 @@ func (m *LBControlManager) OnCreate(e event.CreateEvent) (handler.Result, error)
 	return handler.Result{}, nil
 }
 
+func (m *LBControlManager) addDeleteTask(svc *corev1.Service) {
+	log.Debugf("[Event] service %s deleted", genOBjNamespacedName(svc.Namespace, svc.Name))
+	config, err := genLBConfigByService(m.client, svc, m.clusterName, m.nodes)
+	if err != nil {
+		log.Warnf("[Event] deleted-service %s config gen failed %s", genOBjNamespacedName(svc.Namespace, svc.Name), err.Error())
+		return
+	}
+	log.Debugf("[Event] deleted-service %s config %s", genOBjNamespacedName(svc.Namespace, svc.Name), config.ToJson())
+	m.taskCh <- NewTask(DeleteTask, driver.Config{}, config)
+}
+
 func (m *LBControlManager) OnUpdate(e event.UpdateEvent) (handler.Result, error) {
 	switch obj := e.ObjectNew.(type) {
 	case *corev1.Service:
 		if isServiceNeedHandle(obj) {
-			log.Debugf("[Event] service %s updated", genOBjNamespacedName(obj.Namespace, obj.Name))
-			oldObj := e.ObjectOld.(*corev1.Service)
+			if obj.ObjectMeta.DeletionTimestamp != nil {
+				m.addDeleteTask(obj)
+			} else {
+				log.Debugf("[Event] service %s updated", genOBjNamespacedName(obj.Namespace, obj.Name))
+				oldObj := e.ObjectOld.(*corev1.Service)
 
-			old, err := genLBConfigByService(m.client, oldObj, m.clusterName, m.nodes)
-			if err != nil {
-				log.Warnf("[Event] updated-service %s old config gen failed %s", genOBjNamespacedName(oldObj.Namespace, oldObj.Name), err.Error())
+				old, err := genLBConfigByService(m.client, oldObj, m.clusterName, m.nodes)
+				if err != nil {
+					log.Warnf("[Event] updated-service %s old config gen failed %s", genOBjNamespacedName(oldObj.Namespace, oldObj.Name), err.Error())
+				}
+
+				new, err := genLBConfigByService(m.client, obj, m.clusterName, m.nodes)
+				if err != nil {
+					log.Warnf("[Event] updated-service %s new config gen failed %s", genOBjNamespacedName(obj.Namespace, obj.Name), err.Error())
+				}
+				log.Debugf("[Event] updated-service %s old config %s new config %s", genOBjNamespacedName(obj.Namespace, obj.Name), old.ToJson(), new.ToJson())
+				m.taskCh <- NewTask(UpdateTask, old, new)
 			}
-			log.Debugf("[Event] updated-service %s old config %s", genOBjNamespacedName(oldObj.Namespace, oldObj.Name), old.ToJson())
-
-			new, err := genLBConfigByService(m.client, obj, m.clusterName, m.nodes)
-			if err != nil {
-				log.Warnf("[Event] updated-service %s new config gen failed %s", genOBjNamespacedName(obj.Namespace, obj.Name), err.Error())
-			}
-			log.Debugf("[Event] updated-service %s new config %s", genOBjNamespacedName(obj.Namespace, obj.Name), new.ToJson())
-
-			m.taskCh <- NewTask(UpdateTask, old, new)
 		}
 	case *corev1.Endpoints:
 		log.Debugf("[Event] endpoints %s updated", genOBjNamespacedName(obj.Namespace, obj.Name))
@@ -225,14 +219,12 @@ func (m *LBControlManager) OnUpdate(e event.UpdateEvent) (handler.Result, error)
 		if err != nil {
 			log.Warnf("[Event] updated-endpoints %s old config gen failed %s", genOBjNamespacedName(oldObj.Namespace, oldObj.Name), err.Error())
 		}
-		log.Debugf("[Event] updated-endpoints %s old config %s", genOBjNamespacedName(oldObj.Namespace, oldObj.Name), old.ToJson())
 
 		new, err := genLBConfigByEndpoins(m.client, obj, m.clusterName, m.nodes)
 		if err != nil {
 			log.Warnf("[Event] updated-endpoints %s new config gen failed %s", genOBjNamespacedName(obj.Namespace, obj.Name), err.Error())
 		}
-		log.Debugf("[Event] updated-endpoints %s new config %s", genOBjNamespacedName(obj.Namespace, obj.Name), new.ToJson())
-
+		log.Debugf("[Event] updated-endpoints %s old config %s new config %s", genOBjNamespacedName(obj.Namespace, obj.Name), old.ToJson(), new.ToJson())
 		m.taskCh <- NewTask(UpdateTask, old, new)
 	}
 	return handler.Result{}, nil
@@ -242,13 +234,7 @@ func (m *LBControlManager) OnDelete(e event.DeleteEvent) (handler.Result, error)
 	switch obj := e.Object.(type) {
 	case *corev1.Service:
 		if isServiceNeedHandle(obj) {
-			log.Debugf("[Event] service %s deleted", genOBjNamespacedName(obj.Namespace, obj.Name))
-			config, err := genLBConfigByService(m.client, obj, m.clusterName, m.nodes)
-			if err != nil {
-				log.Warnf("[Event] deleted-service %s config gen failed %s", genOBjNamespacedName(obj.Namespace, obj.Name), err.Error())
-			}
-			log.Debugf("[Event] deleted-service %s config %s", genOBjNamespacedName(obj.Namespace, obj.Name), config.ToJson())
-			m.taskCh <- NewTask(DeleteTask, driver.Config{}, config)
+			m.addDeleteTask(obj)
 		}
 	case *corev1.Node:
 		log.Debugf("[Event] node %s deleted", obj.Name)
@@ -280,5 +266,5 @@ func (m *LBControlManager) deleteNodeIP(n *corev1.Node) {
 }
 
 func genOBjNamespacedName(namespace, name string) string {
-	return fmt.Sprintf("{Namespace: %s, Name: %s}", namespace, name)
+	return fmt.Sprintf("{namespace:%s, name:%s}", namespace, name)
 }

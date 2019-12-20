@@ -74,5 +74,5 @@ func main() {
 	if err != nil {
 		log.Fatalf("new controller failed %s", err.Error())
 	}
-	controller.TaskLoop()
+	controller.Loop()
 }

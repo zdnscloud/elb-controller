@@ -33,7 +33,7 @@ func (c radwareConfig) create(cli *client.Client) error {
 		if err := cli.RealServerPort().Reconcile(k, c.RealServerPort); err != nil {
 			return err
 		}
-		if err := cli.ServerGroup().AddServer(c.VsID, k); err != nil {
+		if err := cli.ServerGroup().ReconcileServer(c.VsID, k); err != nil {
 			return err
 		}
 	}
@@ -66,13 +66,8 @@ func (c updateRadwareConfig) update(cli *client.Client) error {
 		if err := cli.RealServerPort().Reconcile(toAddRsID, c.new.RealServerPort); err != nil {
 			return err
 		}
-	}
-
-	if !isSameRsport(c) {
-		for id, _ := range c.new.RealServers {
-			if err := cli.RealServerPort().Reconcile(id, c.new.RealServerPort); err != nil {
-				return err
-			}
+		if err := cli.ServerGroup().ReconcileServer(c.new.VsID, toAddRsID); err != nil {
+			return err
 		}
 	}
 	return nil

@@ -45,6 +45,13 @@ func (c *VirtualServerClient) update(id string, obj *types.VirtualServer) error 
 }
 
 func (c *VirtualServerClient) Delete(id string) error {
+	_, err := c.get(id)
+	if err != nil {
+		if err == ResourceNotFoundError {
+			return nil
+		}
+		return err
+	}
 	return delete(c.genUrl(id), c.token)
 }
 

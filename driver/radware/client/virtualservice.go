@@ -49,6 +49,13 @@ func (c *VirtualServiceClient) Reconcile(id string, vs *types.VirtualService) er
 }
 
 func (c *VirtualServiceClient) Delete(id string) error {
+	_, err := c.get(id)
+	if err != nil {
+		if err == ResourceNotFoundError {
+			return nil
+		}
+		return err
+	}
 	return delete(c.genUrl(id), c.token)
 }
 
