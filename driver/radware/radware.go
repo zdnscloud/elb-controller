@@ -32,7 +32,7 @@ func (d *RadwareDriver) client() *client.Client {
 	}
 
 	m, err := d.primary.IsMaster()
-	if m && err != nil {
+	if m && err == nil {
 		return d.primary
 	}
 
@@ -44,18 +44,20 @@ func (d *RadwareDriver) client() *client.Client {
 }
 
 func (d *RadwareDriver) Create(c driver.Config) error {
+	client := d.client()
 	if err := validateConfig(c); err != nil {
 		return err
 	}
 	for _, config := range getRadwareConfigs(c) {
-		if err := config.create(d.client()); err != nil {
+		if err := config.create(client); err != nil {
 			return err
 		}
 	}
-	return d.client().ApplyAndSave()
+	return client.ApplyAndSave()
 }
 
 func (d *RadwareDriver) Update(old, new driver.Config) error {
+	client := d.client()
 	if err := validateConfig(old); err != nil {
 		return err
 	}
@@ -66,19 +68,19 @@ func (d *RadwareDriver) Update(old, new driver.Config) error {
 	olds := getRadwareConfigs(old)
 	news := getRadwareConfigs(new)
 	for _, toD := range getToDeleteRdConfigs(olds, news) {
-		if err := toD.delete(d.client()); err != nil {
+		if err := toD.delete(client); err != nil {
 			return err
 		}
 	}
 
 	for _, toA := range getToAddRdConfigs(olds, news) {
-		if err := toA.create(d.client()); err != nil {
+		if err := toA.create(client); err != nil {
 			return err
 		}
 	}
 
 	for _, toU := range getUpdateRdConfigs(olds, news) {
-		if err := toU.update(d.client()); err != nil {
+		if err := toU.update(client); err != nil {
 			return err
 		}
 	}
@@ -86,16 +88,17 @@ func (d *RadwareDriver) Update(old, new driver.Config) error {
 }
 
 func (d *RadwareDriver) Delete(c driver.Config) error {
+	client := d.client()
 	if err := validateConfig(c); err != nil {
 		return err
 	}
 
 	for _, config := range getRadwareConfigs(c) {
-		if err := config.delete(d.client()); err != nil {
+		if err := config.delete(client); err != nil {
 			return err
 		}
 	}
-	return d.client().ApplyAndSave()
+	return client.ApplyAndSave()
 }
 
 func (d *RadwareDriver) Version() string {

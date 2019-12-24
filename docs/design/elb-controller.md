@@ -101,6 +101,11 @@ elb-controller会起一个线程，读取elb的任务队列，并调用api更新
     * 若elb上配置与期望配置不一致，则创建elb service update任务，并加入任务队列
     * 若存在有删除时间不为空的service（符合条件），则创建elb service delete任务，加入任务队列
 * 启动任务处理的线程
+### loadbalance driver
+目前实现了radware的适配驱动，并支持负载均衡器双机ha部署
+* ha逻辑
+RadwareDriver对象包含ha双机的client对象，在执行task前，先获取当前master角色的client，再执行task
+> 若启动elb-controller时没有填写backup server地址，则相当于单机模式
 ## annotation设计
 功能划分：
 1. 指定负载均衡算法：轮询、最小连接、源ip hash

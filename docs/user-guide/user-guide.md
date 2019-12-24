@@ -4,7 +4,8 @@
 * radware负载均衡设备或虚拟机
 ## 部署
 修改deploy.yml中的启动参数后通过kubectl进行部署，需要修改的参数如下：
-* -server:radware设备管理地址
+* -master:radware master设备管理地址
+* -backup:radware backup设备管理地址（可选，仅ha场景下需要）
 * -user:radware设备管理用户
 * -password:radware密码
 * -cluster:k8s集群名称

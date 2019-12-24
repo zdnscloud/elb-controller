@@ -49,8 +49,8 @@ var (
 
 func main() {
 
-	flag.StringVar(&masterServer, "master-server", "", "master external loadbalancer managerment address")
-	flag.StringVar(&backupServer, "backup-server", "", "backup external loadbalancer managerment address")
+	flag.StringVar(&masterServer, "masterserver", "", "master external loadbalancer managerment address")
+	flag.StringVar(&backupServer, "backupserver", "", "backup external loadbalancer managerment address")
 	flag.StringVar(&user, "user", "admin", "external loadbalancer user")
 	flag.StringVar(&password, "password", "zcloud", "external loadbalancer password")
 	flag.StringVar(&cluster, "cluster", "local", "zcloud kubernetes cluster name")
