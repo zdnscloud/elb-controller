@@ -37,18 +37,20 @@ func createK8SClient() (cache.Cache, client.Client, error) {
 }
 
 var (
-	server      string
-	user        string
-	password    string
-	cluster     string
-	version     string
-	build       string
-	showVersion bool
+	masterServer string
+	backupServer string
+	user         string
+	password     string
+	cluster      string
+	version      string
+	build        string
+	showVersion  bool
 )
 
 func main() {
 
-	flag.StringVar(&server, "server", "", "external loadbalancer managerment address")
+	flag.StringVar(&masterServer, "master-server", "", "master external loadbalancer managerment address")
+	flag.StringVar(&backupServer, "backup-server", "", "backup external loadbalancer managerment address")
 	flag.StringVar(&user, "user", "admin", "external loadbalancer user")
 	flag.StringVar(&password, "password", "zcloud", "external loadbalancer password")
 	flag.StringVar(&cluster, "cluster", "local", "zcloud kubernetes cluster name")
@@ -67,7 +69,7 @@ func main() {
 		log.Fatalf("Create cache failed:%s", err.Error())
 	}
 
-	driver := radware.New(server, user, password)
+	driver := radware.New(masterServer, backupServer, user, password)
 	log.Infof("Driver info:%s", driver.Version())
 
 	controller, err := lbctrl.New(cli, cache, cluster, driver)

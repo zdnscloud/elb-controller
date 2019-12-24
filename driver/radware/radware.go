@@ -10,13 +10,37 @@ const (
 )
 
 type RadwareDriver struct {
-	client *client.Client
+	primary   *client.Client
+	secondary *client.Client
 }
 
-func New(serverAddr, user, password string) *RadwareDriver {
-	return &RadwareDriver{
-		client: client.New(user, password, serverAddr),
+func New(masterServer, backupServer, user, password string) *RadwareDriver {
+	if backupServer != "" {
+		return &RadwareDriver{
+			primary:   client.New(user, password, masterServer),
+			secondary: client.New(user, password, backupServer),
+		}
 	}
+	return &RadwareDriver{
+		primary: client.New(user, password, masterServer),
+	}
+}
+
+func (d *RadwareDriver) client() *client.Client {
+	if d.secondary == nil {
+		return d.primary
+	}
+
+	m, err := d.primary.IsMaster()
+	if m && err != nil {
+		return d.primary
+	}
+
+	b, err := d.secondary.IsMaster()
+	if b && err == nil {
+		return d.secondary
+	}
+	return d.primary
 }
 
 func (d *RadwareDriver) Create(c driver.Config) error {
@@ -24,11 +48,11 @@ func (d *RadwareDriver) Create(c driver.Config) error {
 		return err
 	}
 	for _, config := range getRadwareConfigs(c) {
-		if err := config.create(d.client); err != nil {
+		if err := config.create(d.client()); err != nil {
 			return err
 		}
 	}
-	return d.client.ApplyAndSave()
+	return d.client().ApplyAndSave()
 }
 
 func (d *RadwareDriver) Update(old, new driver.Config) error {
@@ -42,23 +66,23 @@ func (d *RadwareDriver) Update(old, new driver.Config) error {
 	olds := getRadwareConfigs(old)
 	news := getRadwareConfigs(new)
 	for _, toD := range getToDeleteRdConfigs(olds, news) {
-		if err := toD.delete(d.client); err != nil {
+		if err := toD.delete(d.client()); err != nil {
 			return err
 		}
 	}
 
 	for _, toA := range getToAddRdConfigs(olds, news) {
-		if err := toA.create(d.client); err != nil {
+		if err := toA.create(d.client()); err != nil {
 			return err
 		}
 	}
 
 	for _, toU := range getUpdateRdConfigs(olds, news) {
-		if err := toU.update(d.client); err != nil {
+		if err := toU.update(d.client()); err != nil {
 			return err
 		}
 	}
-	return d.client.ApplyAndSave()
+	return d.client().ApplyAndSave()
 }
 
 func (d *RadwareDriver) Delete(c driver.Config) error {
@@ -67,11 +91,11 @@ func (d *RadwareDriver) Delete(c driver.Config) error {
 	}
 
 	for _, config := range getRadwareConfigs(c) {
-		if err := config.delete(d.client); err != nil {
+		if err := config.delete(d.client()); err != nil {
 			return err
 		}
 	}
-	return d.client.ApplyAndSave()
+	return d.client().ApplyAndSave()
 }
 
 func (d *RadwareDriver) Version() string {

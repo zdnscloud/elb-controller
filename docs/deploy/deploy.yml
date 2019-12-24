@@ -21,8 +21,10 @@ spec:
         command: 
           - /elbc
         args:
-          - -server
+          - -master-server
           - 192.168.134.101
+          - -backup-server
+          - 192.168.134.102
           - -user
           - admin
           - -password

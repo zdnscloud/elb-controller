@@ -4,6 +4,11 @@ import (
 	"encoding/json"
 )
 
+const (
+	HaSwitchInfoStateMaster HaSwitchInfoState = "master"
+	HaSwitchInfoStateBackup HaSwitchInfoState = "backup"
+)
+
 type RealServer struct {
 	// IpAddr:realserver ip
 	IpAddr string `json:"IpAddr"`
@@ -131,3 +136,9 @@ func NewVirtualServiceRealGroup(id string) *VirtualServiceRealGroup {
 		ProxyIpMode:       1,
 	}
 }
+
+type HaState struct {
+	HaSwitchInfoState HaSwitchInfoState `json:"haSwitchInfoState"`
+}
+
+type HaSwitchInfoState string

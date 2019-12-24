@@ -3,6 +3,8 @@ package client
 import (
 	"encoding/base64"
 	"fmt"
+
+	"github.com/zdnscloud/elb-controller/driver/radware/types"
 )
 
 const (
@@ -12,6 +14,7 @@ const (
 	saveActionPath        = "/config?action=save"
 	revertActionPath      = "/config?action=revert"
 	revertApplyActionPath = "/config?action=revertapply"
+	haStatePath           = "/config/haSwitchInfoState"
 )
 
 var ResourceNotFoundError = fmt.Errorf("resource not found")
@@ -96,4 +99,16 @@ func (c *Client) revert() error {
 func (c *Client) revertApply() error {
 	url := fmt.Sprintf("%s%s%s", reqUrlPrefix, c.server, revertApplyActionPath)
 	return actionWithRetry(url, c.token)
+}
+
+func (c *Client) IsMaster() (bool, error) {
+	s := &types.HaState{}
+	url := fmt.Sprintf("%s%s%s", reqUrlPrefix, c.server, haStatePath)
+	if err := get(url, c.token, s); err != nil {
+		return false, err
+	}
+	if s.HaSwitchInfoState == types.HaSwitchInfoStateMaster {
+		return true, nil
+	}
+	return false, nil
 }
