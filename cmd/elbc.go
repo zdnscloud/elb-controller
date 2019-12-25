@@ -8,6 +8,7 @@ import (
 	"github.com/zdnscloud/elb-controller/lbctrl"
 
 	"github.com/zdnscloud/cement/log"
+	"github.com/zdnscloud/cement/signal"
 	"github.com/zdnscloud/gok8s/cache"
 	"github.com/zdnscloud/gok8s/client"
 	"github.com/zdnscloud/gok8s/client/config"
@@ -72,9 +73,9 @@ func main() {
 	driver := radware.New(masterServer, backupServer, user, password)
 	log.Infof("Driver info:%s", driver.Version())
 
-	controller, err := lbctrl.New(cli, cache, cluster, driver)
+	_, err = lbctrl.New(cli, cache, cluster, driver)
 	if err != nil {
 		log.Fatalf("new controller failed %s", err.Error())
 	}
-	controller.Loop()
+	signal.WaitForInterrupt(nil)
 }

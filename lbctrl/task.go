@@ -16,14 +16,14 @@ const (
 )
 
 type Task struct {
-	ID        string        `json:"id"`
-	Type      TaskType      `json:"type"`
-	OldConfig driver.Config `json:"oldConfig,omitempty"`
-	NewConfig driver.Config `json:"newConfig"`
-	Failures  int           `json:"failures"`
+	ID        string         `json:"id"`
+	Type      TaskType       `json:"type"`
+	OldConfig *driver.Config `json:"oldConfig,omitempty"`
+	NewConfig *driver.Config `json:"newConfig"`
+	Failures  int            `json:"failures"`
 }
 
-func NewTask(t TaskType, old, new driver.Config) Task {
+func NewTask(t TaskType, old, new *driver.Config) Task {
 	id, _ := uuid.Gen()
 	return Task{
 		ID:        id,

@@ -93,12 +93,12 @@
   version = "v0.3.8"
 
 [[projects]]
-  digest = "1:beb5b4f42a25056f0aa291b5eadd21e2f2903a05d15dfe7caf7eaee7e12fa972"
+  digest = "1:7cd2924a44ecf80a319cfa2378529fabd348d011b739fb4eccc565f65e3296c4"
   name = "github.com/json-iterator/go"
   packages = ["."]
   pruneopts = "UT"
-  revision = "03217c3e97663914aec3faafde50d081f197a0a2"
-  version = "v1.1.8"
+  revision = "acfec88f7a0d5140ace3dcdbee10184e3684a9e1"
+  version = "v1.1.9"
 
 [[projects]]
   digest = "1:33422d238f147d247752996a26574ac48dcf472976eda7f5134015f06bf16563"
@@ -142,11 +142,13 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:0dc73a5a7d6c51eb5b90e9f7615a6605fc3f8bff52bf3e0c5d67e9338081ca52"
+  digest = "1:2e24e95e5301020b958ab627c10d1b0f7de0ffba21925d4180a4e46ff0ee7093"
   name = "github.com/zdnscloud/cement"
   packages = [
     "log",
     "log/log4go",
+    "signal",
+    "slice",
     "uuid",
   ]
   pruneopts = "UT"
@@ -154,7 +156,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:dc81492ba410e1f7791d7ae324a9098c32e0fe40e53dce585bd5e7ce51d55f30"
+  digest = "1:4bab71a76414c71228307d728952da8df26c9069c26dc15e70300b76c1043086"
   name = "github.com/zdnscloud/gok8s"
   packages = [
     "cache",
@@ -166,6 +168,7 @@
     "event",
     "eventsource",
     "handler",
+    "helper",
     "predicate",
     "util",
   ]
@@ -178,7 +181,7 @@
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
   pruneopts = "UT"
-  revision = "e9b2fee46413994441b28dfca259d911d963dfed"
+  revision = "becbf705a91575484002d598f87d74f0002801e7"
 
 [[projects]]
   branch = "master"
@@ -208,14 +211,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:0ab979be17fd0b01fc7c5d1644c11addaa857f4e47ad7ca68364c3da33801dab"
+  digest = "1:33a7c341af0f0358f9ac03d9d12d6990b9a8dc1641e1845fea2e6810fd0572af"
   name = "golang.org/x/sys"
   packages = [
     "unix",
     "windows",
   ]
   pruneopts = "UT"
-  revision = "4a24b406529242041050cb1dec3e0e4c46a5f1b6"
+  revision = "c709ea063b76879dc9915358f55d4d77c16ab6d5"
 
 [[projects]]
   digest = "1:8d8faad6b12a3a4c819a3f9618cb6ee1fa1cfc33253abeeea8b55336721e3405"
@@ -467,6 +470,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/zdnscloud/cement/log",
+    "github.com/zdnscloud/cement/signal",
     "github.com/zdnscloud/cement/uuid",
     "github.com/zdnscloud/gok8s/cache",
     "github.com/zdnscloud/gok8s/client",
@@ -474,9 +478,9 @@
     "github.com/zdnscloud/gok8s/controller",
     "github.com/zdnscloud/gok8s/event",
     "github.com/zdnscloud/gok8s/handler",
+    "github.com/zdnscloud/gok8s/helper",
     "github.com/zdnscloud/gok8s/predicate",
     "k8s.io/api/core/v1",
-    "k8s.io/apimachinery/pkg/api/errors",
     "k8s.io/apimachinery/pkg/types",
     "k8s.io/client-go/kubernetes/scheme",
   ]
