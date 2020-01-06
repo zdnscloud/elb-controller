@@ -282,13 +282,17 @@ func (m *LBControlManager) onUpdateEndpoints(old, new *corev1.Endpoints) {
 		return
 	}
 
-	log.Debugf("[Event] endpoints %s updated", genObjNamespacedName(new.Namespace, new.Name))
 	svc := &corev1.Service{}
 	if err := m.client.Get(context.TODO(), types.NamespacedName{Namespace: new.Namespace, Name: new.Name}, svc); err != nil {
 		log.Warnf("[Event] get endpoints %s service failed %s", genObjNamespacedName(new.Namespace, new.Name), err.Error())
 		return
 	}
 
+	if !isServiceNeedHandle(svc) {
+		return
+	}
+
+	log.Debugf("[Event] endpoints %s updated", genObjNamespacedName(new.Namespace, new.Name))
 	oldConfig := genLBConfig(svc, old, m.clusterName, m.nodes)
 	newConfig := genLBConfig(svc, new, m.clusterName, m.nodes)
 	m.taskCh <- NewTask(UpdateTask, &oldConfig, &newConfig)
