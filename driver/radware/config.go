@@ -166,7 +166,7 @@ func getVirtualService(s driver.Service) *types.VirtualService {
 		UDPBalance: 3, // default tcp service type
 		VirtPort:   s.Port,
 		RealPort:   s.BackendPort,
-		DBind:      3,
+		DBind:      2,
 		PBind:      2,
 	}
 	if s.Protocol == driver.ProtocolUDP {
