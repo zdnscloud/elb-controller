@@ -67,53 +67,65 @@ k8s LoadBalancer类型service对象，供与外部负载设备联动使用，实
 当service pod发生漂移后，elb-controller需要感知service真实的nodeport（可以接受请求的node的nodeport），并更新elb上的虚拟server的server group配置
 ### k8s事件监听
 elb-controller一方面监听k8s service、endpoint及node事件，并根据如下规则执行相应操作:
-* 监听到service创建事件后：
-    * 判断是否需要处理：LoadBalancer类型服务，且有zcloud lb vip annotation
-        * 判断service删除时间是否为空，若不为空，创建elb service delete任务，加入任务队列
-        * 若service删除时间为空则创建elb service create任务，加入任务队列
-* 监听到service更新事件后：
-    * 判断是否需要处理
-        * 判断service删除时间是否为空，若不为空，创建elb service delete任务，加入任务队列
-        * 若service删除时间为空，则创建elb service update任务，加入任务队列
-* 监听到service删除事件后：
-    * 判断是否需要处理
-        * 创建elb service delete任务，并加入任务队列
-* 监听到endpoint事件后：
-    * 向api-server请求同namespace同名service，并判断是否需要处理
-        * 创建elb service update任务，加入任务队列
-* 监听到node事件：
-    * node创建事件：将node name和ip加入至elb-controller nodes属性中（map）
-    * node删除事件，删除elb-controller nodes属性中对应项
+* endpoints create event：
+    * 根据endpoints的namespace和name获取service，并判断svc是否需要处理
+        * 判断service DeletionTime不为空，创建elb delete任务，加入任务队列；否则创建elb create任务，加入任务队列
+* service update event：
+    * 判断svc是否需要处理
+        * 若service DeletionTime不为空，创建elb service delete任务，加入任务队列
+        * 判断更新前后svc的annotation或spec是否有更新，若annotation和spec均无更新，直接返回
+            * 创建elb update任务，加入任务队列
+* endpoints update event：
+    * 根据endpoints的namespace和name获取service，并判断svc是否需要处理
+        * 判断endpoints的Subsets是否有更新，若无更新直接返回
+        * 创建elb update任务，加入任务队列
+* node create event：
+    * 将node name和ip加入至elb-controller缓存中
+* node delete event：
+    * 删除elb-controller缓存中对应node信息
+> service是否需要处理的判断标准：1.为LoadBalancer类型svc 2.该svc有zcloud lb vip annotation（lb.zcloud.cn/vip）
 ### elb task处理
 elb-controller会起一个线程，读取elb的任务队列，并调用api更新外部负载均衡设备的配置
-* task分类：
+* task分类及处理逻辑：
     * create task
+        * 调用lb driver的Create接口创建相应的lb配置
+        * 更新svc status（设置status中的lb vip）
+        * 为svc和svc的endpoints添加finalizer
     * update task
-    * delete task:任务执行完成后会自动移除service上的zcloud lb finalizer
-    > finalizer存在的意义是为了保证elb-controller可以完全清除掉负载均衡器上的相关所有配置；不设置finalizer情况下controller会因为获取不到service的endpoints导致无法删除负载均衡器上的realserver配置
+        * 调用lb driver的Update接口更新对应的lb配置
+        * 根据更新前后配置判断是否需要更新svc status（lb vip）
+    * delete task
+        * 调用lb driver的Delete接口删除对应的lb配置
+        * 移除svc和svc endpoints上的finalizer
+         > finalizer存在的意义是为了保证elb-controller可以完全清除掉负载均衡器上的相关所有配置；不设置finalizer情况下controller会因为获取不到service的endpoints导致无法删除负载均衡器上的realserver配置
 * 错误处理：
     * 若task执行失败，会记录日志，若未达到最大失败次数，会增加失败计数后再次将该task加入任务队列
-    * 若达到最大失败次数（3次），则会丢弃此task，防止反复执行占用cpu
+    * 若达到最大失败次数（5次），则会丢弃此task，防止反复执行占用cpu
 ### elb-controller启动
 * 根据启动参数（elb api地址，用户名，密码）初始化elb-controller对象，并向api-server list node，初始化elb-controller对象内的node name和ip缓存map
-* 启动k8s事件监听线程：首次启动后会list集群所有service，筛选出符合条件的service，并根据该service的endpoint及node列表，生成相应的elb配置，向elb查询该service配置是否存在以及是否需要更新
-    * 若elb上缺失配置，则创建elb service create任务，加入任务队列
-    * 若elb上配置与期望配置不一致，则创建elb service update任务，并加入任务队列
-    * 若存在有删除时间不为空的service（符合条件），则创建elb service delete任务，加入任务队列
+* 启动k8s事件监听线程
+    * 首次启动会list集群中所有svc，若svc需要处理，创建elb create任务，加入任务队列
 * 启动任务处理的线程
+    > k8s事件监听和elb任务处理同时进行，不存在LoadBalancer svc数量超过任务队列长度导致阻塞的问题
 ### loadbalance driver
-目前实现了radware的适配驱动，并支持负载均衡器双机ha部署
-* ha逻辑
-RadwareDriver对象包含ha双机的client对象，在执行task前，先获取当前master角色的client，再执行task
+目前实现了radware的适配驱动，并支持radware整机HA部署模式
+* HA逻辑
+RadwareDriver对象包含ha双机的client对象，在执行task时，先获取当前master角色的client，再进行task配置处理
 > 若启动elb-controller时没有填写backup server地址，则相当于单机模式
+* driver client处理逻辑
+    * 在执行操作（创建、更新、删除）前，先get 检查资源是否存在，是否需要更新，若资源已存在且不需要进行更新，直接跳过
+    > 该逻辑是为规避radware 相关配置api调用过于频繁可能会导致配置错乱的bug
 ## annotation设计
-功能划分：
-1. 指定负载均衡算法：轮询、最小连接、源ip hash
-2. 服务vip（必需项）
+1. 指定负载均衡算法(可选)
+    * key：lb.zdns.cn/method
+    * value: rr(轮询)、lc(最小连接)、hash(源ip hash)
+2. 服务vip（必填）
+    * key：lb.zdns.cn/vip
+    * key：ipv4 address
 ## 目录结构
 * cmd:main入口函数
 * lbctrl:controller模块，k8s事件监听及任务队列管理
 * driver:外部负载均衡器driver实现，目前实现了radware的适配支持，主要提供对l4负载策略的配置接口（create、update、delete）
 ## todo
-* 支持外部负载均衡ha部署模式自动切换功能
-* 支持L7负载（即支持Ingress）：需考虑外部负载设备场景下Ingress的对象限制，如果Ingress的后端service类型是ClusterIP则外部负载设备实际是无法访问到该service的
+* 优化radware driver逻辑，提高效率，增加更多的异常处理
+* 支持L7负载（即支持Ingress）
