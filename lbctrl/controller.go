@@ -2,6 +2,7 @@ package lbctrl
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sync"
 
@@ -15,20 +16,29 @@ import (
 	"github.com/zdnscloud/gok8s/handler"
 	"github.com/zdnscloud/gok8s/helper"
 	"github.com/zdnscloud/gok8s/predicate"
+	"github.com/zdnscloud/gok8s/recorder"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/record"
 )
 
 const (
 	taskBufferCount = 30
 	maxTaskFailures = 5
 
+	ElbControllerName        = "elb-controller"
 	ZcloudLBServiceFinalizer = "lb.zcloud.cn/protect"
+
+	CreateLBConfigFailedReason = "CreateLBConfigFailed"
+	UpdateLBConfigFailedReason = "UpdateLBConfigFailed"
+	DeleteLBConfigFailedReason = "DeleteLBConfigFailed"
 )
 
 type LBControlManager struct {
 	clusterName string
+	recorder    record.EventRecorder
 	client      client.Client
 	driver      driver.Driver
 	taskCh      chan Task
@@ -37,11 +47,18 @@ type LBControlManager struct {
 	lock        sync.Mutex
 }
 
-func New(cli client.Client, cache cache.Cache, clusterName string, lbDriver driver.Driver) (*LBControlManager, error) {
-	ctrl := controller.New("elb-controller", cache, scheme.Scheme)
+func New(cli client.Client, cache cache.Cache, config *rest.Config, clusterName string, lbDriver driver.Driver) (*LBControlManager, error) {
+	ctrl := controller.New(ElbControllerName, cache, scheme.Scheme)
 	ctrl.Watch(&corev1.Endpoints{})
 	ctrl.Watch(&corev1.Service{})
 	ctrl.Watch(&corev1.Node{})
+
+	var options client.Options
+	options.Scheme = client.GetDefaultScheme()
+	r, err := recorder.GetEventRecorderForComponent(config, options.Scheme, ElbControllerName)
+	if err != nil {
+		return nil, err
+	}
 
 	nodes, err := getNodeIPMap(cli)
 	if err != nil {
@@ -50,6 +67,7 @@ func New(cli client.Client, cache cache.Cache, clusterName string, lbDriver driv
 
 	m := &LBControlManager{
 		clusterName: clusterName,
+		recorder:    r,
 		client:      cli,
 		driver:      lbDriver,
 		taskCh:      make(chan Task, taskBufferCount),
@@ -66,6 +84,7 @@ func (m *LBControlManager) loop() {
 	for {
 		t := <-m.taskCh
 		if isTaskFailureExceed(t) {
+			m.event(t)
 			continue
 		}
 		switch t.Type {
@@ -81,6 +100,19 @@ func (m *LBControlManager) loop() {
 	}
 }
 
+func (m *LBControlManager) event(t Task) {
+	var reason string
+	switch t.Type {
+	case CreateTask:
+		reason = CreateLBConfigFailedReason
+	case UpdateTask:
+		reason = UpdateLBConfigFailedReason
+	case DeleteTask:
+		reason = DeleteLBConfigFailedReason
+	}
+	m.recorder.Event(t.K8sService, corev1.EventTypeWarning, reason, t.ErrorMessage)
+}
+
 func isTaskFailureExceed(t Task) bool {
 	if t.Failures == maxTaskFailures {
 		log.Warnf("[TaskLoop] drop task %s due to exceed max task failures %v", t.ToJson(), maxTaskFailures)
@@ -92,26 +124,25 @@ func isTaskFailureExceed(t Task) bool {
 func (m *LBControlManager) handleCreateTask(t Task) {
 	if err := m.driver.Create(*t.NewConfig); err != nil {
 		log.Warnf("[TaskLoop] task %s failed %s", t.ToJson(), err.Error())
-		m.handleFailedTask(t)
+		m.handleFailedTask(t, fmt.Sprintf("create loadbalance config failed %s", err.Error()))
 		return
 	}
 	log.Debugf("[TaskLoop] task %s succeed", t.ToJson())
 	if err := addSvcFinalizerAndUpdateStatus(m.client, *t.NewConfig); err != nil {
 		log.Warnf("[TaskLoop] add service finalizer or update status failed %s", err.Error())
-		m.handleFailedTask(t)
+		m.handleFailedTask(t, fmt.Sprintf("add service finalizer or update status failed %s", err.Error()))
 		return
 	}
 	if err := addEpFinalizer(m.client, *t.NewConfig); err != nil {
 		log.Warnf("[TaskLoop] add endpoints finalizer failed %s", err.Error())
-		m.handleFailedTask(t)
-		return
+		m.handleFailedTask(t, fmt.Sprintf("add endpoints finalizer failed %s", err.Error()))
 	}
 }
 
 func (m *LBControlManager) handleUpdateTask(t Task) {
 	if err := m.driver.Update(*t.OldConfig, *t.NewConfig); err != nil {
 		log.Warnf("[TaskLoop] task %s failed %s", t.ToJson(), err.Error())
-		m.handleFailedTask(t)
+		m.handleFailedTask(t, fmt.Sprintf("update loadbalance config failed %s", err.Error()))
 		return
 	}
 	log.Debugf("[TaskLoop] task %s succeed", t.ToJson())
@@ -120,24 +151,26 @@ func (m *LBControlManager) handleUpdateTask(t Task) {
 	}
 	if err := addSvcFinalizerAndUpdateStatus(m.client, *t.NewConfig); err != nil {
 		log.Warnf("[TaskLoop] add service finalizer or update status failed %s", err.Error())
+		m.handleFailedTask(t, fmt.Sprintf("add service finalizer or update status failed %s", err.Error()))
 	}
 }
 
 func (m *LBControlManager) handleDeleteTask(t Task) {
 	if err := m.driver.Delete(*t.NewConfig); err != nil {
 		log.Warnf("[TaskLoop] task %s failed %s", t.ToJson(), err.Error())
-		m.handleFailedTask(t)
+		m.handleFailedTask(t, fmt.Sprintf("delete loadbalance config failed %s", err.Error()))
 		return
 	}
 	log.Debugf("[TaskLoop] task %s succeed", t.ToJson())
 	if err := removeFinalizer(m.client, *t.NewConfig); err != nil {
 		log.Warnf("[TaskLoop] remove finalizer failed %s", err.Error())
-		m.handleFailedTask(t)
+		m.handleFailedTask(t, fmt.Sprintf("remove finalizer failed %s", err.Error()))
 	}
 }
 
-func (m *LBControlManager) handleFailedTask(t Task) {
+func (m *LBControlManager) handleFailedTask(t Task, errMsg string) {
 	t.Failures += 1
+	t.ErrorMessage = errMsg
 	m.taskCh <- t
 }
 
@@ -215,7 +248,7 @@ func (m *LBControlManager) onCreateEndpoints(ep *corev1.Endpoints) {
 	}
 	log.Debugf("[Event] service %s created", genObjNamespacedName(svc.Namespace, svc.Name))
 	config := genLBConfig(svc, ep, m.clusterName, m.nodes)
-	m.taskCh <- NewTask(CreateTask, nil, &config)
+	m.taskCh <- NewTask(CreateTask, nil, &config, svc)
 }
 
 func (m *LBControlManager) onCreateNode(n *corev1.Node) {
@@ -236,7 +269,7 @@ func (m *LBControlManager) onDeleteService(s *corev1.Service) {
 	}
 	log.Debugf("[Event] service %s deleted", genObjNamespacedName(s.Namespace, s.Name))
 	config := genLBConfig(s, ep, m.clusterName, m.nodes)
-	m.taskCh <- NewTask(DeleteTask, nil, &config)
+	m.taskCh <- NewTask(DeleteTask, nil, &config, s)
 }
 
 func (m *LBControlManager) OnUpdate(e event.UpdateEvent) (handler.Result, error) {
@@ -274,7 +307,7 @@ func (m *LBControlManager) onUpdateService(old, new *corev1.Service) {
 
 	oldConfig := genLBConfig(old, ep, m.clusterName, m.nodes)
 	newConfig := genLBConfig(new, ep, m.clusterName, m.nodes)
-	m.taskCh <- NewTask(UpdateTask, &oldConfig, &newConfig)
+	m.taskCh <- NewTask(UpdateTask, &oldConfig, &newConfig, new)
 }
 
 func (m *LBControlManager) onUpdateEndpoints(old, new *corev1.Endpoints) {
@@ -295,7 +328,7 @@ func (m *LBControlManager) onUpdateEndpoints(old, new *corev1.Endpoints) {
 	log.Debugf("[Event] endpoints %s updated", genObjNamespacedName(new.Namespace, new.Name))
 	oldConfig := genLBConfig(svc, old, m.clusterName, m.nodes)
 	newConfig := genLBConfig(svc, new, m.clusterName, m.nodes)
-	m.taskCh <- NewTask(UpdateTask, &oldConfig, &newConfig)
+	m.taskCh <- NewTask(UpdateTask, &oldConfig, &newConfig, svc)
 }
 
 func (m *LBControlManager) OnDelete(e event.DeleteEvent) (handler.Result, error) {

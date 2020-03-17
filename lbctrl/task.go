@@ -3,8 +3,10 @@ package lbctrl
 import (
 	"encoding/json"
 
-	"github.com/zdnscloud/cement/uuid"
 	"github.com/zdnscloud/elb-controller/driver"
+
+	"github.com/zdnscloud/cement/uuid"
+	corev1 "k8s.io/api/core/v1"
 )
 
 type TaskType string
@@ -16,20 +18,23 @@ const (
 )
 
 type Task struct {
-	ID        string         `json:"id"`
-	Type      TaskType       `json:"type"`
-	OldConfig *driver.Config `json:"oldConfig,omitempty"`
-	NewConfig *driver.Config `json:"newConfig"`
-	Failures  int            `json:"failures"`
+	ID           string          `json:"id"`
+	Type         TaskType        `json:"type"`
+	OldConfig    *driver.Config  `json:"oldConfig,omitempty"`
+	NewConfig    *driver.Config  `json:"newConfig"`
+	Failures     int             `json:"failures"`
+	K8sService   *corev1.Service `json:"-"`
+	ErrorMessage string          `json:"-"`
 }
 
-func NewTask(t TaskType, old, new *driver.Config) Task {
+func NewTask(t TaskType, old, new *driver.Config, svc *corev1.Service) Task {
 	id, _ := uuid.Gen()
 	return Task{
-		ID:        id,
-		Type:      t,
-		OldConfig: old,
-		NewConfig: new,
+		ID:         id,
+		Type:       t,
+		OldConfig:  old,
+		NewConfig:  new,
+		K8sService: svc,
 	}
 }
 

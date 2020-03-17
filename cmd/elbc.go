@@ -12,29 +12,30 @@ import (
 	"github.com/zdnscloud/gok8s/cache"
 	"github.com/zdnscloud/gok8s/client"
 	"github.com/zdnscloud/gok8s/client/config"
+	"k8s.io/client-go/rest"
 )
 
-func createK8SClient() (cache.Cache, client.Client, error) {
+func createK8SClient() (cache.Cache, client.Client, *rest.Config, error) {
 	config, err := config.GetConfig()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	c, err := cache.New(config, cache.Options{})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	cli, err := client.New(config, client.Options{})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	stop := make(chan struct{})
 	go c.Start(stop)
 	c.WaitForCacheSync(stop)
 
-	return c, cli, nil
+	return c, cli, config, nil
 }
 
 var (
@@ -65,7 +66,7 @@ func main() {
 
 	log.InitLogger("debug")
 
-	cache, cli, err := createK8SClient()
+	cache, cli, config, err := createK8SClient()
 	if err != nil {
 		log.Fatalf("Create cache failed:%s", err.Error())
 	}
@@ -73,7 +74,7 @@ func main() {
 	driver := radware.New(masterServer, backupServer, user, password)
 	log.Infof("Driver info:%s", driver.Version())
 
-	_, err = lbctrl.New(cli, cache, cluster, driver)
+	_, err = lbctrl.New(cli, cache, config, cluster, driver)
 	if err != nil {
 		log.Fatalf("new controller failed %s", err.Error())
 	}
